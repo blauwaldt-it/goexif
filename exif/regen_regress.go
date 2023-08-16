@@ -1,3 +1,4 @@
+//go:build ignore
 // +build ignore
 
 package main
@@ -12,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rwcarlsen/goexif/exif"
-	"github.com/rwcarlsen/goexif/tiff"
+	"github.com/blauwaldt-it/goexif/exif"
+	"github.com/blauwaldt-it/goexif/tiff"
 )
 
 func main() {
