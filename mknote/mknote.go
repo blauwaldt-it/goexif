@@ -21,9 +21,9 @@ type canon struct{}
 
 // Parse decodes all Canon makernote data found in x and adds it to x.
 func (_ *canon) Parse(x *exif.Exif) error {
-	m, err := x.Get(exif.MakerNote)
+	m, err := x.MakerNote()
 	if err != nil {
-		return nil
+		return err
 	}
 
 	mk, err := x.Get(exif.Make)
@@ -44,7 +44,7 @@ func (_ *canon) Parse(x *exif.Exif) error {
 	if err != nil {
 		return err
 	}
-	x.LoadTags(mkNotesDir, makerNoteCanonFields, false)
+	x.LoadTagsPref(mkNotesDir, makerNoteCanonFields, false, "mkcanon.")
 	return nil
 }
 
@@ -52,10 +52,12 @@ type nikonV3 struct{}
 
 // Parse decodes all Nikon makernote data found in x and adds it to x.
 func (_ *nikonV3) Parse(x *exif.Exif) error {
-	m, err := x.Get(exif.MakerNote)
+	m, err := x.MakerNote()
 	if err != nil {
-		return nil
-	} else if bytes.Compare(m.Val[:6], []byte("Nikon\000")) != 0 {
+		return err
+	}
+
+	if bytes.Compare(m.Val[:6], []byte("Nikon\000")) != 0 {
 		return nil
 	}
 
@@ -65,6 +67,6 @@ func (_ *nikonV3) Parse(x *exif.Exif) error {
 	if err != nil {
 		return err
 	}
-	x.LoadTags(mkNotes.Dirs[0], makerNoteNikon3Fields, false)
+	x.LoadTagsPref(mkNotes.Dirs[0], makerNoteNikon3Fields, false, "mknikon.")
 	return nil
 }

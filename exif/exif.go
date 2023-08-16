@@ -151,20 +151,20 @@ func (p *parser) Parse(x *Exif) error {
 
 	// thumbnails
 	if len(x.Tiff.Dirs) >= 2 {
-		x.LoadTags(x.Tiff.Dirs[1], thumbnailFields, false)
+		x.LoadTagsPref(x.Tiff.Dirs[1], thumbnailFields, false, "thn")
 	}
 
 	te := make(tiffErrors)
 
 	// recurse into exif, gps, and interop sub-IFDs
-	if err := loadSubDir(x, ExifIFDPointer, exifFields); err != nil {
+	if err := loadSubDir(x, ExifIFDPointer, exifFields, "exif."); err != nil {
 		te[loadExif] = err.Error()
 	}
-	if err := loadSubDir(x, GPSInfoIFDPointer, gpsFields); err != nil {
+	if err := loadSubDir(x, GPSInfoIFDPointer, gpsFields, "gps."); err != nil {
 		te[loadGPS] = err.Error()
 	}
 
-	if err := loadSubDir(x, InteroperabilityIFDPointer, interopFields); err != nil {
+	if err := loadSubDir(x, InteroperabilityIFDPointer, interopFields, "intop."); err != nil {
 		te[loadInteroperability] = err.Error()
 	}
 	if len(te) > 0 {
@@ -173,7 +173,7 @@ func (p *parser) Parse(x *Exif) error {
 	return nil
 }
 
-func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName) error {
+func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix string) error {
 	r := bytes.NewReader(x.Raw)
 
 	tag, err := x.Get(ptr)
@@ -193,7 +193,7 @@ func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName) error {
 	if err != nil {
 		return fmt.Errorf("exif: sub-IFD %s decode failed: %v", ptr, err)
 	}
-	x.LoadTags(subDir, fieldMap, false)
+	x.LoadTagsPref(subDir, fieldMap, false, prefix)
 	return nil
 }
 
@@ -315,11 +315,12 @@ func Decode(r io.Reader) (*Exif, error) {
 }
 
 // LoadTags loads tags into the available fields from the tiff Directory
-// using the given tagid-fieldname mapping.  Used to load makernote and
-// other meta-data.  If showMissing is true, tags in d that are not in the
+// using the given tagid-fieldname mapping (prepends prefix to fieldname).
+// Used to load makernote and other meta-data.  If showMissing is true,
+// tags in d that are not in the
 // fieldMap will be loaded with the FieldName UnknownPrefix followed by the
 // tag ID (in hex format).
-func (x *Exif) LoadTags(d *tiff.Dir, fieldMap map[uint16]FieldName, showMissing bool) {
+func (x *Exif) LoadTagsPref(d *tiff.Dir, fieldMap map[uint16]FieldName, showMissing bool, prefix string) {
 	for _, tag := range d.Tags {
 		name := fieldMap[tag.Id]
 		if name == "" {
@@ -328,8 +329,13 @@ func (x *Exif) LoadTags(d *tiff.Dir, fieldMap map[uint16]FieldName, showMissing 
 			}
 			name = FieldName(fmt.Sprintf("%v%x", UnknownPrefix, tag.Id))
 		}
-		x.main[name] = tag
+		x.main[FieldName(prefix)+name] = tag
 	}
+}
+
+// Call LoadTags without prefix for tagnames.
+func (x *Exif) LoadTags(d *tiff.Dir, fieldMap map[uint16]FieldName, showMissing bool) {
+	x.LoadTagsPref(d, fieldMap, showMissing, "")
 }
 
 // Get retrieves the EXIF tag for the given field name.
@@ -372,12 +378,18 @@ func (x *Exif) Walk(w Walker) error {
 // time's Location will be time.Local.
 func (x *Exif) DateTime() (time.Time, error) {
 	var dt time.Time
-	tag, err := x.Get(DateTimeOriginal)
-	if err != nil {
-		tag, err = x.Get(DateTime)
-		if err != nil {
-			return dt, err
+	var tag *tiff.Tag
+	var err error
+	for _, tn := range []FieldName{DateTimeOriginal, DateTime, DateTimeDigitized} {
+		for _, pref := range []FieldName{"", "exif."} {
+			tag, err = x.Get(pref + tn)
+			if err == nil {
+				break
+			}
 		}
+	}
+	if err != nil {
+		return dt, err
 	}
 	if tag.Format() != tiff.StringVal {
 		return dt, errors.New("DateTime[Original] not in string format")
@@ -509,19 +521,19 @@ func tagDegrees(tag *tiff.Tag) (float64, error) {
 // whether it was present.
 func (x *Exif) LatLong() (lat, long float64, err error) {
 	// All calls of x.Get might return an TagNotPresentError
-	longTag, err := x.Get(FieldName("GPSLongitude"))
+	longTag, err := x.Get(FieldName("gps.GPSLongitude"))
 	if err != nil {
 		return
 	}
-	ewTag, err := x.Get(FieldName("GPSLongitudeRef"))
+	ewTag, err := x.Get(FieldName("gps.GPSLongitudeRef"))
 	if err != nil {
 		return
 	}
-	latTag, err := x.Get(FieldName("GPSLatitude"))
+	latTag, err := x.Get(FieldName("gps.GPSLatitude"))
 	if err != nil {
 		return
 	}
-	nsTag, err := x.Get(FieldName("GPSLatitudeRef"))
+	nsTag, err := x.Get(FieldName("gps.GPSLatitudeRef"))
 	if err != nil {
 		return
 	}
@@ -553,6 +565,18 @@ func (x *Exif) String() string {
 		fmt.Fprintf(&buf, "%s: %s\n", name, tag)
 	}
 	return buf.String()
+}
+
+// MakerNote returns the makernote tag if it exists. If it doesn't exist,
+// TagNotPresentError will be returned
+func (x *Exif) MakerNote() (m *tiff.Tag, err error) {
+	for _, pref := range []FieldName{"", "exif."} {
+		m, err = x.Get(pref + MakerNote)
+		if err == nil {
+			break
+		}
+	}
+	return
 }
 
 // JpegThumbnail returns the jpeg thumbnail if it exists. If it doesn't exist,
