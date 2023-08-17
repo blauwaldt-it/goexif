@@ -23,6 +23,7 @@ const (
 	jpeg_APP1 = 0xE1
 
 	exifPointer    = 0x8769
+	subIfdPointer  = 0x14a
 	gpsPointer     = 0x8825
 	interopPointer = 0xA005
 )
@@ -97,6 +98,16 @@ func IsCriticalError(err error) bool {
 	return !ok
 }
 
+// IsSubIfdError reports whether the error happened while decoding a
+// IFD0-sub-IFD.
+func IsSubIfdError(err error) bool {
+	if te, ok := err.(tiffErrors); ok {
+		_, isSubIfd := te[loadSubIfd]
+		return isSubIfd
+	}
+	return false
+}
+
 // IsExifError reports whether the error happened while decoding the EXIF
 // sub-IFD.
 func IsExifError(err error) bool {
@@ -110,7 +121,7 @@ func IsExifError(err error) bool {
 // IsGPSError reports whether the error happened while decoding the GPS sub-IFD.
 func IsGPSError(err error) bool {
 	if te, ok := err.(tiffErrors); ok {
-		_, isGPS := te[loadExif]
+		_, isGPS := te[loadGPS]
 		return isGPS
 	}
 	return false
@@ -132,12 +143,14 @@ const (
 	loadExif tiffError = iota
 	loadGPS
 	loadInteroperability
+	loadSubIfd
 )
 
 var stagePrefix = map[tiffError]string{
 	loadExif:             "loading EXIF sub-IFD",
 	loadGPS:              "loading GPS sub-IFD",
 	loadInteroperability: "loading Interoperability sub-IFD",
+	loadSubIfd:           "loading a Sub-IFD",
 }
 
 // Parse reads data from the tiff data in x and populates the tags
@@ -156,6 +169,24 @@ func (p *parser) Parse(x *Exif) error {
 
 	te := make(tiffErrors)
 
+	// recurse into subIfds, if present
+	subs, err := x.Get(SubIFDPointer)
+	if err == nil && subs.Count > 0 {
+		for h := 0; h < int(subs.Count); h++ {
+			offs, err := subs.Int(h)
+			if err != nil {
+				break
+			}
+			pref := "sub" + strconv.Itoa(h) + "."
+			err = loadSubDirOffs(x, SubIFDPointer, int64(offs), exifFields, pref)
+			if err != nil {
+				te[loadSubIfd] = err.Error()
+				continue
+			}
+		}
+
+	}
+
 	// recurse into exif, gps, and interop sub-IFDs
 	if err := loadSubDir(x, ExifIFDPointer, exifFields, "exif."); err != nil {
 		te[loadExif] = err.Error()
@@ -173,8 +204,22 @@ func (p *parser) Parse(x *Exif) error {
 	return nil
 }
 
-func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix string) error {
+func loadSubDirOffs(x *Exif, ptr FieldName, offset int64, fieldMap map[uint16]FieldName, prefix string) error {
+
 	r := bytes.NewReader(x.Raw)
+	_, err := r.Seek(offset, 0)
+	if err != nil {
+		return fmt.Errorf("exif: seek to sub-IFD %s failed: %v", ptr, err)
+	}
+	subDir, _, err := tiff.DecodeDir(r, x.Tiff.Order)
+	if err != nil {
+		return fmt.Errorf("exif: sub-IFD %s decode failed: %v", ptr, err)
+	}
+	x.LoadTagsPref(subDir, fieldMap, false, prefix)
+	return nil
+}
+
+func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix string) error {
 
 	tag, err := x.Get(ptr)
 	if err != nil {
@@ -185,16 +230,7 @@ func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix st
 		return nil
 	}
 
-	_, err = r.Seek(offset, 0)
-	if err != nil {
-		return fmt.Errorf("exif: seek to sub-IFD %s failed: %v", ptr, err)
-	}
-	subDir, _, err := tiff.DecodeDir(r, x.Tiff.Order)
-	if err != nil {
-		return fmt.Errorf("exif: sub-IFD %s decode failed: %v", ptr, err)
-	}
-	x.LoadTagsPref(subDir, fieldMap, false, prefix)
-	return nil
+	return loadSubDirOffs(x, ptr, offset, fieldMap, prefix)
 }
 
 // Exif provides access to decoded EXIF metadata fields and values.

@@ -29,6 +29,7 @@ const (
 	Artist                     FieldName = "Artist"
 	Copyright                  FieldName = "Copyright"
 	ExifIFDPointer             FieldName = "ExifIFDPointer"
+	SubIFDPointer              FieldName = "SubIFDPointer"
 	GPSInfoIFDPointer          FieldName = "GPSInfoIFDPointer"
 	InteroperabilityIFDPointer FieldName = "InteroperabilityIFDPointer"
 	ExifVersion                FieldName = "ExifVersion"
@@ -183,7 +184,8 @@ var exifFields = map[uint16]FieldName{
 	0x9c9f: XPSubject,
 
 	// private tags
-	exifPointer: ExifIFDPointer,
+	exifPointer:   ExifIFDPointer,
+	subIfdPointer: SubIFDPointer,
 
 	/////////////////////////////////////
 	////////// Exif sub IFD /////////////
