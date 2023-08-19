@@ -160,11 +160,11 @@ func (p *parser) Parse(x *Exif) error {
 	if len(x.Tiff.Dirs) == 0 {
 		return errors.New("Invalid exif data")
 	}
-	x.LoadTags(x.Tiff.Dirs[0], exifFields, false)
+	x.LoadTags(x.Tiff.Dirs[0], ExifFields, false)
 
 	// thumbnails
 	if len(x.Tiff.Dirs) >= 2 {
-		x.LoadTagsPref(x.Tiff.Dirs[1], thumbnailFields, false, "thn")
+		x.LoadTagsPref(x.Tiff.Dirs[1], thumbnailFields, false, "thn.")
 	}
 
 	te := make(tiffErrors)
@@ -178,7 +178,7 @@ func (p *parser) Parse(x *Exif) error {
 				break
 			}
 			pref := "sub" + strconv.Itoa(h) + "."
-			err = loadSubDirOffs(x, SubIFDPointer, int64(offs), exifFields, pref)
+			err = loadSubDirOffs(x, SubIFDPointer, int64(offs), ExifFields, pref)
 			if err != nil {
 				te[loadSubIfd] = err.Error()
 				continue
@@ -188,7 +188,7 @@ func (p *parser) Parse(x *Exif) error {
 	}
 
 	// recurse into exif, gps, and interop sub-IFDs
-	if err := loadSubDir(x, ExifIFDPointer, exifFields, "exif."); err != nil {
+	if err := loadSubDir(x, ExifIFDPointer, ExifFields, "exif."); err != nil {
 		te[loadExif] = err.Error()
 	}
 	if err := loadSubDir(x, GPSInfoIFDPointer, gpsFields, "gps."); err != nil {
@@ -204,6 +204,9 @@ func (p *parser) Parse(x *Exif) error {
 	return nil
 }
 
+// loadSubDir reads IFD subdir in x from position offset and
+// loads Tags specified in fieldMap (stored with prefix).
+// ptr ist a reference name of the subdir  used for error output.
 func loadSubDirOffs(x *Exif, ptr FieldName, offset int64, fieldMap map[uint16]FieldName, prefix string) error {
 
 	r := bytes.NewReader(x.Raw)
@@ -219,6 +222,8 @@ func loadSubDirOffs(x *Exif, ptr FieldName, offset int64, fieldMap map[uint16]Fi
 	return nil
 }
 
+// loadSubDir reads IFD subdir in x from position referenced by ptr and
+// loads Tags specified in fieldMap (stored with prefix)
 func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix string) error {
 
 	tag, err := x.Get(ptr)
@@ -618,7 +623,7 @@ func (x *Exif) MakerNote() (m *tiff.Tag, err error) {
 // JpegThumbnail returns the jpeg thumbnail if it exists. If it doesn't exist,
 // TagNotPresentError will be returned
 func (x *Exif) JpegThumbnail() ([]byte, error) {
-	offset, err := x.Get(ThumbJPEGInterchangeFormat)
+	offset, err := x.Get("thn." + ThumbJPEGInterchangeFormat)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +632,7 @@ func (x *Exif) JpegThumbnail() ([]byte, error) {
 		return nil, err
 	}
 
-	length, err := x.Get(ThumbJPEGInterchangeFormatLength)
+	length, err := x.Get("thn." + ThumbJPEGInterchangeFormatLength)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +642,31 @@ func (x *Exif) JpegThumbnail() ([]byte, error) {
 	}
 
 	return x.Raw[start : start+l], nil
+}
+
+// SubIfdImage returns the image referenced in SubIfd (Tag 0x14a) subifdn, if applicable
+func (x *Exif) SubIfdImage(subifdn int) ([]byte, error) {
+	is := "sub" + FieldName(strconv.Itoa(subifdn)) + "."
+
+	pstt, err := x.Get(is + PreviewImageStart)
+	if err != nil {
+		return nil, err
+	}
+	pst, err := pstt.Int(0)
+	if err != nil {
+		return nil, err
+	}
+
+	plent, err := x.Get(is + PreviewImageLength)
+	if err != nil {
+		return nil, err
+	}
+	plen, err := plent.Int(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return x.Raw[pst : pst+plen], nil
 }
 
 // MarshalJson implements the encoding/json.Marshaler interface providing output of

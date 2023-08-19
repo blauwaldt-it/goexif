@@ -90,6 +90,9 @@ const (
 	SubjectDistanceRange       FieldName = "SubjectDistanceRange"
 	LensMake                   FieldName = "LensMake"
 	LensModel                  FieldName = "LensModel"
+	SubfileType                FieldName = "SubfileType"
+	PreviewImageStart          FieldName = "PreviewImageStart"
+	PreviewImageLength         FieldName = "PreviewImageLength"
 )
 
 // Windows-specific tags
@@ -147,7 +150,7 @@ const (
 	InteroperabilityIndex FieldName = "InteroperabilityIndex"
 )
 
-var exifFields = map[uint16]FieldName{
+var ExifFields = map[uint16]FieldName{
 	/////////////////////////////////////
 	////////// IFD 0 ////////////////////
 	/////////////////////////////////////
@@ -259,6 +262,10 @@ var exifFields = map[uint16]FieldName{
 	0xA40C: SubjectDistanceRange,
 	0xA433: LensMake,
 	0xA434: LensModel,
+
+	0x00fe: SubfileType,
+	0x0201: PreviewImageStart,
+	0x0202: PreviewImageLength,
 }
 
 var gpsFields = map[uint16]FieldName{

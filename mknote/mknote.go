@@ -3,6 +3,7 @@ package mknote
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/blauwaldt-it/goexif/exif"
 	"github.com/blauwaldt-it/goexif/tiff"
@@ -23,7 +24,7 @@ type canon struct{}
 func (_ *canon) Parse(x *exif.Exif) error {
 	m, err := x.MakerNote()
 	if err != nil {
-		return err
+		return nil
 	}
 
 	mk, err := x.Get(exif.Make)
@@ -54,7 +55,7 @@ type nikonV3 struct{}
 func (_ *nikonV3) Parse(x *exif.Exif) error {
 	m, err := x.MakerNote()
 	if err != nil {
-		return err
+		return nil
 	}
 
 	if bytes.Compare(m.Val[:6], []byte("Nikon\000")) != 0 {
@@ -68,5 +69,53 @@ func (_ *nikonV3) Parse(x *exif.Exif) error {
 		return err
 	}
 	x.LoadTagsPref(mkNotes.Dirs[0], makerNoteNikon3Fields, false, "mknikon.")
+
+	// Read Preview SubIFD, if present
+	tag, err := x.Get("mknikon." + Preview)
+	if err == nil {
+		offset, err := tag.Int64(0)
+		if err == nil {
+			r := bytes.NewReader(m.Val[10:])
+			_, err := r.Seek(offset, 0)
+			if err == nil {
+				subDir, _, err := tiff.DecodeDir(r, x.Tiff.Order)
+				if err == nil {
+					x.LoadTagsPref(subDir, exif.ExifFields, false, "mknprev.")
+				}
+			}
+		}
+	}
+
 	return nil
+}
+
+func (_ *nikonV3) MakerNotePreview(x *exif.Exif) ([]byte, error) {
+
+	mn, err := x.MakerNote()
+	if err != nil {
+		return nil, err
+	}
+	if bytes.Compare(mn.Val[:6], []byte("Nikon\000")) != 0 {
+		return nil, errors.New("No Nikon makernote found")
+	}
+
+	pstt, err := x.Get("mknprev." + exif.PreviewImageStart)
+	if err != nil {
+		return nil, err
+	}
+	pst, err := pstt.Int(0)
+	if err != nil {
+		return nil, err
+	}
+
+	plent, err := x.Get("mknprev." + exif.PreviewImageLength)
+	if err != nil {
+		return nil, err
+	}
+	plen, err := plent.Int(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return mn.Val[10+pst : 10+pst+plen], nil
 }
