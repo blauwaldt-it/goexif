@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"strings"
 	"unicode"
@@ -371,6 +372,32 @@ func (t *Tag) Float(i int) (float64, error) {
 		return 0, t.typeErr(FloatVal)
 	}
 	return t.floatVals[i], nil
+}
+
+// NumAsFloat returns the tag's i'th numeric value as a float
+func (t *Tag) NumAsFloat(i int) (float64, error) {
+	switch t.format {
+	case FloatVal:
+		return t.floatVals[i], nil
+	case RatVal:
+		return float64(t.ratVals[i][0]) / float64(t.ratVals[i][1]), nil
+	case IntVal:
+		return float64(t.intVals[i]), nil
+	}
+	return 0, t.typeErr(FloatVal)
+}
+
+// NumAsInt returns the tag's i'th numeric value as a int
+func (t *Tag) NumAsInt(i int) (int, error) {
+	switch t.format {
+	case FloatVal:
+		return int(t.floatVals[i]), nil
+	case RatVal:
+		return int(math.Round(float64(t.ratVals[i][0]) / float64(t.ratVals[i][1]))), nil
+	case IntVal:
+		return int(t.intVals[i]), nil
+	}
+	return 0, t.typeErr(IntVal)
 }
 
 // StringVal returns the tag's value as a string. It returns an error if the
