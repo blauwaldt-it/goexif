@@ -314,12 +314,12 @@ func Decode(r io.Reader) (*Exif, error) {
 		// Locate the JPEG APP1 header.
 		sec, err = newAppSec(jpeg_APP1, r)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error seeking jpeg exif data: %w", err)
 		}
 		// Strip away EXIF header.
 		er, err = sec.exifReader()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error reading jpeg exif data: %w", err)
 		}
 		tif, err = tiff.Decode(er)
 	}

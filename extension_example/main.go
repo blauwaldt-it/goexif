@@ -12,8 +12,8 @@ import (
 
 func main() {
 
-	// OPen any NEF file
-	fn := "..\\pixdb_go\\tmp\\DSC_8508.NEF"
+	// Open any NEF file
+	fn := "ANY_FILENAME.NEF"
 
 	f, err := os.Open(fn)
 	if err != nil {
