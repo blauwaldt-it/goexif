@@ -10,12 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/blauwaldt-it/goexif/bufreader"
 	"github.com/blauwaldt-it/goexif/tiff"
 )
 
@@ -242,7 +242,8 @@ func loadSubDir(x *Exif, ptr FieldName, fieldMap map[uint16]FieldName, prefix st
 type Exif struct {
 	Tiff *tiff.Tiff
 	main map[FieldName]*tiff.Tag
-	Raw  []byte
+	// Raw  []byte
+	Bufrd *bufreader.Bufreader
 }
 
 // Decode parses EXIF data from r (a TIFF, JPEG, or raw EXIF block)
@@ -253,7 +254,9 @@ type Exif struct {
 //
 // The error can be inspected with functions such as IsCriticalError
 // to determine whether the returned object might still be usable.
-func Decode(r io.Reader) (*Exif, error) {
+func Decode(rd bufreader.ReadSeekReaderAt) (*Exif, error) {
+
+	bfrd := bufreader.New(rd)
 
 	// EXIF data in JPEG is stored in the APP1 marker. EXIF data uses the TIFF
 	// format to store data.
@@ -262,7 +265,7 @@ func Decode(r io.Reader) (*Exif, error) {
 	// marker and also the EXIF header.
 
 	header := make([]byte, 4)
-	n, err := io.ReadFull(r, header)
+	n, err := io.ReadFull(bfrd, header)
 	if err != nil {
 		return nil, fmt.Errorf("exif: error reading 4 byte header, got %d, %v", n, err)
 	}
@@ -285,9 +288,9 @@ func Decode(r io.Reader) (*Exif, error) {
 	}
 
 	// Put the header bytes back into the reader.
-	r = io.MultiReader(bytes.NewReader(header), r)
+	bfrd.Seek(0, io.SeekStart)
 	var (
-		er  *bytes.Reader
+		er  *bufreader.Bufreader
 		tif *tiff.Tiff
 		sec *appSec
 	)
@@ -295,7 +298,7 @@ func Decode(r io.Reader) (*Exif, error) {
 	switch {
 	case isRawExif:
 		var header [6]byte
-		if _, err := io.ReadFull(r, header[:]); err != nil {
+		if _, err := io.ReadFull(bfrd, header[:]); err != nil {
 			return nil, fmt.Errorf("exif: unexpected raw exif header read error")
 		}
 		if got, want := string(header[:]), "Exif\x00\x00"; got != want {
@@ -303,13 +306,8 @@ func Decode(r io.Reader) (*Exif, error) {
 		}
 		fallthrough
 	case isTiff:
-		// Functions below need the IFDs from the TIFF data to be stored in a
-		// *bytes.Reader.  We use TeeReader to get a copy of the bytes as a
-		// side-effect of tiff.Decode() doing its work.
-		b := &bytes.Buffer{}
-		tr := io.TeeReader(r, b)
-		tif, err = tiff.Decode(tr)
-		er = bytes.NewReader(b.Bytes())
+		er = bfrd.NewReaderOffs()
+		tif, err = tiff.Decode(bfrd)
 	case assumeJPEG:
 		// Locate the JPEG APP1 header.
 		sec, err = newAppSec(jpeg_APP1, r)
@@ -329,16 +327,12 @@ func Decode(r io.Reader) (*Exif, error) {
 	}
 
 	er.Seek(0, 0)
-	raw, err := ioutil.ReadAll(er)
-	if err != nil {
-		return nil, decodeError{cause: err}
-	}
 
 	// build an exif structure from the tiff
 	x := &Exif{
-		main: map[FieldName]*tiff.Tag{},
-		Tiff: tif,
-		Raw:  raw,
+		main:  map[FieldName]*tiff.Tag{},
+		Tiff:  tif,
+		Bufrd: er,
 	}
 
 	for i, p := range parsers {
