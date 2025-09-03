@@ -438,7 +438,7 @@ func (x *Exif) DateTime() (time.Time, error) {
 	exifTimeLayout := "2006:01:02 15:04:05"
 	dateStr := strings.TrimRight(string(tag.Val), "\x00")
 	// TODO(bradfitz,mpl): look for timezone offset, GPS time, etc.
-	timeZone := time.Local
+	timeZone := time.UTC
 	if tz, _ := x.TimeZone(); tz != nil {
 		timeZone = tz
 	}
